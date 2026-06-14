@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# HomeKit Bridge 配置器 - 服务启动脚本
+# ==============================================================================
+bashio::log.info "Starting HomeKit Bridge 配置器..."
+
+cd /usr/src/app || bashio::exit.nok "Cannot cd to /usr/src/app"
+
+# 启动 Flask
+exec python3 server.py

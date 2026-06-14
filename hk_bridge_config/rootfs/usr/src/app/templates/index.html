@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HomeKit Bridge 配置器</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <span class="logo">🌉</span>
+        <h1>HomeKit Bridge 配置器</h1>
+      </div>
+      <div class="meta">
+        <span class="pill" id="stat-yaml">加载中…</span>
+        <span class="pill" id="stat-bridges">—</span>
+        <span class="pill" id="stat-token">—</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 顶部工具条 -->
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="🔍 搜索 entity_id / 中文名 / domain…">
+      <select id="domain-filter">
+        <option value="">全部 domain</option>
+      </select>
+      <button class="btn-secondary" id="btn-refresh">🔄 重新加载</button>
+      <button class="btn-secondary" id="btn-backups">📦 备份列表</button>
+      <button class="btn-secondary" id="btn-reload">↻ 仅 Reload 6 bridge</button>
+    </div>
+
+    <!-- 6 个 bridge 面板 -->
+    <div id="bridge-list"></div>
+
+    <!-- 底部操作条(浮动) -->
+    <div class="footer-bar" id="footer-bar">
+      <div class="footer-info">
+        <span id="dirty-info">无修改</span>
+      </div>
+      <div class="footer-actions">
+        <button class="btn-secondary" id="btn-preview">👁 预览 Diff</button>
+        <button class="btn-primary" id="btn-save">💾 保存 + Reload</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- 添加 entity 模态 -->
+  <div class="modal" id="add-modal" style="display:none">
+    <div class="modal-mask"></div>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="add-modal-title">添加 entity</h3>
+        <button class="close" data-close="add-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="search" id="add-search" placeholder="搜索 entity_id 或名字…">
+        <div id="add-list" class="entity-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-secondary" data-close="add-modal">关闭</button>
+        <button class="btn-primary" id="btn-add-confirm">✓ 添加选中</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 预览 diff 模态 -->
+  <div class="modal" id="preview-modal" style="display:none">
+    <div class="modal-mask"></div>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>预览修改</h3>
+        <button class="close" data-close="preview-modal">×</button>
+      </div>
+      <div class="modal-body" id="preview-body"></div>
+      <div class="modal-foot">
+        <button class="btn-secondary" data-close="preview-modal">关闭</button>
+        <button class="btn-primary" id="btn-save-from-preview">💾 确认保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 备份列表模态 -->
+  <div class="modal" id="backups-modal" style="display:none">
+    <div class="modal-mask"></div>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>备份列表</h3>
+        <button class="close" data-close="backups-modal">×</button>
+      </div>
+      <div class="modal-body" id="backups-body"></div>
+      <div class="modal-foot">
+        <button class="btn-secondary" data-close="backups-modal">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
