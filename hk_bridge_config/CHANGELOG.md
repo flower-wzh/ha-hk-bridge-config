@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.8 (2026-06-15)
+- **新功能**:URL 加 `?demo=1` 走静态数据模式(6 分类 × 4 区域 × ~40 实体),不走 API 不写文件,方便先看布局再联调。toast 会提示当前是 demo 模式
+- **修复**:布局塌陷 — 给 `.sidebar` 和 `.content` 加 `min-height: 0`。CSS grid item 默认 min-height: auto,内容很高时会把 grid cell 撑开,内层 `.buckets { overflow-y: auto }` 失效,造成"块内不能滑动"且模块看起来重叠。补上 min-height: 0 后,buckets 区能正常在内部滚动
+- **修复**:给 `.content` 加 `min-width: 0`,grid item 在 1fr 列里别因 entity_id 等长字符串被撑出横向滚动条
+
 ## 2.0.7 (2026-06-15)
 - **真根因**:Flask 3.0 / Werkzeug 3.0 移除了 `request.script_name` 属性(之前 v2.0.1-v2.0.6 模板里都用的这个,Flask 2.x 静默返回 Undefined,3.0 显式抛 `UndefinedError`)。**所以从 v2.0.1 起 INGRESS_BASE 就一直是空字符串,所有版本都没真正生效过**。
 - **修复**:index view 改用 `request.environ.get('SCRIPT_NAME', '')` 拿 prefix,作为 `ingress_prefix` 模板变量传入

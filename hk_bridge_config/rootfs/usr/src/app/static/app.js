@@ -17,6 +17,96 @@ const state = {
   treeSearchTerm: '',
 };
 
+// ============== Demo 模式 ==============
+// URL 加 ?demo=1 走静态数据,便于先看布局 / 调试 UI,不走 API
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+
+if (DEMO) {
+  // 6 个分类(对应 6 个 bridge 端口)
+  window.__DEMO_CATEGORIES__ = [
+    { id: 'cat_lights',   name: '灯光',     icon: '💡', port: 51801, rules: [{ type: 'domain', value: 'light' }] },
+    { id: 'cat_switches', name: '开关插座', icon: '🔌', port: 51802, rules: [{ type: 'domain', value: 'switch' }] },
+    { id: 'cat_sensors',  name: '传感器',   icon: '📊', port: 51803, rules: [{ type: 'domain', value: 'sensor' }, { type: 'domain', value: 'binary_sensor' }] },
+    { id: 'cat_climate',  name: '空调',     icon: '❄️', port: 51804, rules: [{ type: 'domain', value: 'climate' }] },
+    { id: 'cat_media',    name: '媒体',     icon: '🎵', port: 51805, rules: [{ type: 'domain', value: 'media_player' }] },
+    { id: 'cat_auto',     name: '自动化',   icon: '⚙️', port: 51806, rules: [{ type: 'domain', value: 'script' }, { type: 'domain', value: 'scene' }] },
+  ];
+
+  // 几个 area × device × entity,模拟 6 个分类的实体分布
+  window.__DEMO_AREAS__ = [
+    { area_id: 'living_room', name: '客厅', devices: [
+      { id: 'd1', name: '小米中枢', entities: [
+        { entity_id: 'light.living_room_main',     friendly_name: '客厅主灯',         domain: 'light',         state: 'on' },
+        { entity_id: 'light.living_room_ambient', friendly_name: '客厅氛围灯',       domain: 'light',         state: 'off' },
+        { entity_id: 'light.living_room_ledstrip', friendly_name: '客厅灯带',         domain: 'light',         state: 'on' },
+        { entity_id: 'switch.living_room_tv',      friendly_name: '客厅电视插座',     domain: 'switch',        state: 'on' },
+        { entity_id: 'switch.living_room_kettle',  friendly_name: '客厅烧水壶插座',   domain: 'switch',        state: 'off' },
+        { entity_id: 'sensor.living_room_temp',    friendly_name: '客厅温度',         domain: 'sensor',        state: '23.5' },
+        { entity_id: 'sensor.living_room_humid',   friendly_name: '客厅湿度',         domain: 'sensor',        state: '58' },
+        { entity_id: 'sensor.living_room_pm25',    friendly_name: '客厅 PM2.5',       domain: 'sensor',        state: '12' },
+        { entity_id: 'binary_sensor.living_motion',friendly_name: '客厅人体存在',     domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'climate.living_room_ac',     friendly_name: '美的中央空调 当前温度', domain: 'climate', state: 'cool' },
+        { entity_id: 'media_player.living_tv',     friendly_name: '客厅电视',         domain: 'media_player',  state: 'idle' },
+      ]},
+    ]},
+    { area_id: 'bedroom', name: '主卧', devices: [
+      { id: 'd2', name: '小米中枢', entities: [
+        { entity_id: 'light.bedroom_main',     friendly_name: '主卧主灯',         domain: 'light',         state: 'off' },
+        { entity_id: 'light.bedroom_bedside',  friendly_name: '主卧床头灯',       domain: 'light',         state: 'on' },
+        { entity_id: 'light.bedroom_desk',     friendly_name: '主卧书桌灯',       domain: 'light',         state: 'off' },
+        { entity_id: 'switch.bedroom_fan',     friendly_name: '主卧风扇',         domain: 'switch',        state: 'off' },
+        { entity_id: 'switch.bedroom_air',     friendly_name: '主卧新风',         domain: 'switch',        state: 'on' },
+        { entity_id: 'sensor.bedroom_temp',    friendly_name: '主卧温度',         domain: 'sensor',        state: '24.1' },
+        { entity_id: 'sensor.bedroom_humid',   friendly_name: '主卧湿度',         domain: 'sensor',        state: '52' },
+        { entity_id: 'binary_sensor.bedroom_door', friendly_name: '主卧门磁',     domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'binary_sensor.bedroom_window', friendly_name: '主卧窗磁',  domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'climate.bedroom_ac',     friendly_name: '主卧空调',         domain: 'climate',       state: 'off' },
+        { entity_id: 'cover.bedroom_curtain',  friendly_name: '主卧窗帘',         domain: 'cover',         state: 'open' },
+        { entity_id: 'script.goodnight',       friendly_name: '晚安场景',         domain: 'script',        state: 'off' },
+      ]},
+    ]},
+    { area_id: 'kitchen', name: '厨房', devices: [
+      { id: 'd3', name: '美的', entities: [
+        { entity_id: 'light.kitchen_main',     friendly_name: '厨房主灯',         domain: 'light',         state: 'on' },
+        { entity_id: 'switch.kitchen_kettle',  friendly_name: '厨房烧水壶',       domain: 'switch',        state: 'off' },
+        { entity_id: 'switch.kitchen_hood',    friendly_name: '厨房油烟机',       domain: 'switch',        state: 'off' },
+        { entity_id: 'sensor.kitchen_temp',    friendly_name: '厨房温度',         domain: 'sensor',        state: '26.3' },
+        { entity_id: 'sensor.kitchen_humid',   friendly_name: '厨房湿度',         domain: 'sensor',        state: '65' },
+        { entity_id: 'binary_sensor.kitchen_smoke', friendly_name: '厨房烟雾',    domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'binary_sensor.kitchen_water', friendly_name: '厨房水浸',    domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'binary_sensor.kitchen_gas',   friendly_name: '厨房燃气',    domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'vacuum.kitchen_robot',   friendly_name: '厨房扫地机',       domain: 'vacuum',        state: 'docked' },
+      ]},
+    ]},
+    { area_id: 'bathroom', name: '卫生间', devices: [
+      { id: 'd4', name: '小米传感器', entities: [
+        { entity_id: 'light.bathroom_main',    friendly_name: '卫生间主灯',       domain: 'light',         state: 'off' },
+        { entity_id: 'switch.bathroom_heater', friendly_name: '卫生间浴霸',       domain: 'switch',        state: 'off' },
+        { entity_id: 'switch.bathroom_fan',    friendly_name: '卫生间排气',       domain: 'switch',        state: 'off' },
+        { entity_id: 'sensor.bathroom_temp',   friendly_name: '卫生间温度',       domain: 'sensor',        state: '25.7' },
+        { entity_id: 'sensor.bathroom_humid',  friendly_name: '卫生间湿度',       domain: 'sensor',        state: '78' },
+        { entity_id: 'binary_sensor.bathroom_leak', friendly_name: '卫生间水浸',  domain: 'binary_sensor', state: 'off' },
+        { entity_id: 'lock.bathroom_door',     friendly_name: '卫生间门锁',       domain: 'lock',          state: 'locked' },
+      ]},
+    ]},
+  ];
+
+  // 按 domain 规则自动归类
+  const assignment = { _unassigned: new Set() };
+  window.__DEMO_CATEGORIES__.forEach(c => assignment[c.id] = new Set());
+  for (const area of window.__DEMO_AREAS__) {
+    for (const dev of area.devices) {
+      for (const ent of dev.entities) {
+        const cat = window.__DEMO_CATEGORIES__.find(c =>
+          c.rules.some(r => r.type === 'domain' && r.value === ent.domain)
+        );
+        (cat ? assignment[cat.id] : assignment._unassigned).add(ent.entity_id);
+      }
+    }
+  }
+  window.__DEMO_ASSIGNMENT__ = assignment;
+}
+
 // ============== 工具 ==============
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -69,6 +159,17 @@ function stateClass(state) {
 // ============== 初始化 ==============
 window.addEventListener('DOMContentLoaded', async () => {
   bindUI();
+  if (DEMO) {
+    state.areas = window.__DEMO_AREAS__;
+    state.categories = window.__DEMO_CATEGORIES__;
+    state.assignment = window.__DEMO_ASSIGNMENT__;
+    // status pill 假装 ok
+    $('#stat-yaml').textContent = '✓ homekit_bridges.yaml';
+    $('#stat-token').textContent = '🔑 token OK (demo)';
+    toast('🎨 Demo 模式 — 静态数据,不会写文件', 'info', 5000);
+    render();
+    return;
+  }
   await loadHealth();
   await loadInitStatus();
   await Promise.all([loadDevices(), loadCategories()]);
