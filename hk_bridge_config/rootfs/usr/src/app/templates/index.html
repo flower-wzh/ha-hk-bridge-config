@@ -128,7 +128,7 @@
   <!-- Toast 容器 -->
   <div id="toast"></div>
 
-  <script>window.INGRESS_BASE = {{ request.script_name|tojson }};</script>
+  <script>window.INGRESS_BASE = {{ request.script_name|default('', true)|tojson }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

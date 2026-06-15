@@ -16,9 +16,28 @@ import requests
 import yaml as pyyaml
 from flask import Flask, request, jsonify, render_template
 from collections import OrderedDict, defaultdict
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 import yaml_ops
+
+
+class IngressPrefixFix:
+    """HA ingress 在请求头里设 X-Ingress-Path(老 HA 是 X-Forwarded-Prefix),
+    把这个值映射到 WSGI 的 SCRIPT_NAME,这样 url_for 拼前缀时才能拿到。
+
+    Werkzeug 的 ProxyFix 只认 X-Forwarded-Prefix,对 HA 现在的 X-Ingress-Path
+    不起作用,所以这里写一个最小中间件直接读 HA 的实际头。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        prefix = (
+            environ.get('HTTP_X_INGRESS_PATH', '')
+            or environ.get('HTTP_X_FORWARDED_PREFIX', '')
+        )
+        if prefix:
+            environ['SCRIPT_NAME'] = prefix
+        return self.app(environ, start_response)
 
 APP_PORT = int(os.environ.get('APP_PORT', 8099))
 YAML_PATH = os.environ.get('YAML_PATH', '/config/homekit_bridges.yaml')
@@ -34,16 +53,10 @@ LOG = logging.getLogger('hk_bridge_config')
 
 app = Flask(__name__)
 
-# HA ingress 反代在前面 — 让 Flask 信任 X-Forwarded-Prefix,这样 url_for 会自动
-# 给静态资源/API 拼上 /api/hassio_ingress/<token>/ 前缀。x_prefix=1 是关键
-# (HA ingress 唯一设的 X-Forwarded-* 头就是 prefix)。
-app.wsgi_app = ProxyFix(
-    app.wsgi_app,
-    x_for=1,
-    x_proto=1,
-    x_host=0,
-    x_prefix=1,
-)
+# HA ingress 反代在前面 — 让 Flask 拿到 ingress 前缀,url_for 才能拼对
+# /api/hassio_ingress/<token>/static/...。IngressPrefixFix 读 X-Ingress-Path
+# (新 HA) 或 X-Forwarded-Prefix (老 HA),写到 SCRIPT_NAME。
+app.wsgi_app = IngressPrefixFix(app.wsgi_app)
 
 
 # ============== HA API 工具 ==============

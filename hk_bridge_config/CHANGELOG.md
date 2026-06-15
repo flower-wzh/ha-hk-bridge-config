@@ -1,7 +1,11 @@
 # Changelog
 
+## 2.0.3 (2026-06-15)
+- **修复**:v2.0.2 用了 Werkzeug 的 `ProxyFix(x_prefix=1)`,但 HA ingress 实际设的是 `X-Ingress-Path` 头(老 HA 是 `X-Forwarded-Prefix`),`ProxyFix` 读不到,`request.script_name` 是 Undefined,模板 `tojson` 报 `TypeError` 500。改用自写的 `IngressPrefixFix` 中间件直接读两个头并写到 `SCRIPT_NAME`。
+- **修复**:模板用 `request.script_name|default('', true)` 兜底,万一头是空也不会 500
+
 ## 2.0.2 (2026-06-15)
-- **修复**:给 Flask 加 `ProxyFix(x_prefix=1)` 中间件,ingress 模式下 `url_for` 才能正确生成 `/api/hassio_ingress/<token>/static/...` 前缀
+- **修复**(已废):`ProxyFix(x_prefix=1)` 中间件 — 实际 HA 不用这个头,见 2.0.3
 - **修复**:把 `request.script_name` 暴露为 `window.INGRESS_BASE`,`app.js` 里的 `fetch('/api/...')` 改为带 ingress 前缀(单点在 `api()` 函数内处理)
 
 ## 2.0.1 (2026-06-15)
