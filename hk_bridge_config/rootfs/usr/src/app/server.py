@@ -31,9 +31,23 @@ class IngressPrefixFix:
         self.app = app
 
     def __call__(self, environ, start_response):
+        # 找 ingress 前缀 — HA 实际设什么头不确定,所以所有可能的都试一遍
         prefix = (
             environ.get('HTTP_X_INGRESS_PATH', '')
             or environ.get('HTTP_X_FORWARDED_PREFIX', '')
+            or environ.get('HTTP_X_FORWARDED_PATH', '')
+            or environ.get('HTTP_X_ORIGINAL_URI', '')
+        )
+        # 一次性把所有 ingress 候选头和 SCRIPT_NAME/PATH_INFO 打到日志,辅助诊断
+        LOG.warning(
+            "[ingress] PATH_INFO=%r SCRIPT_NAME_before=%r prefix=%r "
+            "X-Ingress-Path=%r X-Forwarded-Prefix=%r X-Original-URI=%r",
+            environ.get('PATH_INFO'),
+            environ.get('SCRIPT_NAME'),
+            prefix,
+            environ.get('HTTP_X_INGRESS_PATH', ''),
+            environ.get('HTTP_X_FORWARDED_PREFIX', ''),
+            environ.get('HTTP_X_ORIGINAL_URI', ''),
         )
         if prefix:
             environ['SCRIPT_NAME'] = prefix

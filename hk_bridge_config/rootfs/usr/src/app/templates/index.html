@@ -128,7 +128,12 @@
   <!-- Toast 容器 -->
   <div id="toast"></div>
 
-  <script>window.INGRESS_BASE = {{ request.script_name|default('', true)|tojson }};</script>
+  <script>
+    // 强制渲染绝对 URL — 不依赖 service worker / iframe baseURI / 相对解析
+    // request.url_root = "http://host:port/"  request.script_name = "/api/hassio_ingress/<token>"
+    window.API_BASE = {{ (request.url_root.rstrip('/') + request.script_name)|tojson }};
+    console.log('[hk-bridge] API_BASE =', window.API_BASE);
+  </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.6 (2026-06-15)
+- **修复**:Network 面板显示失败 API 请求 URL 是 `https://host:port/api/health`(没 ingress 前缀)。说明 INGRESS_BASE 实际是空字符串,相对 URL 兜底被 service worker 解析错。改成在模板里渲染**绝对 URL** `request.url_root + request.script_name` 作为 `window.API_BASE`,api() 用绝对 URL fetch,service worker / iframe baseURI 都不能改
+- **调试**:IngressPrefixFix 中间件加 warning 日志,每次请求把 PATH_INFO / SCRIPT_NAME / 4 个候选 ingress 头都打到 add-on 日志。下次复现直接看日志就知道 HA 实际发什么
+
 ## 2.0.5 (2026-06-15)
 - **修复**:IngressPrefixFix 中间件同时把 `PATH_INFO` 里的 ingress 前缀剥掉。HA 转发时可能保留或剥掉前缀,两种情况都兼容:剥过就跳过,没剥过我们剥,然后 Flask 路由只看到 `/api/...` 而不是 `/api/hassio_ingress/<token>/api/...`
 
