@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.7 (2026-06-15)
+- **真根因**:Flask 3.0 / Werkzeug 3.0 移除了 `request.script_name` 属性(之前 v2.0.1-v2.0.6 模板里都用的这个,Flask 2.x 静默返回 Undefined,3.0 显式抛 `UndefinedError`)。**所以从 v2.0.1 起 INGRESS_BASE 就一直是空字符串,所有版本都没真正生效过**。
+- **修复**:index view 改用 `request.environ.get('SCRIPT_NAME', '')` 拿 prefix,作为 `ingress_prefix` 模板变量传入
+- **修复**:v2.0.6 的 `request.url_root` 是后端地址 `http://0.0.0.0:8099/`,不是用户访问的 `https://ha.971128.xyz:2096/`。改用 `location.origin`(浏览器拿到的真实 origin)+ INGRESS_BASE 拼
+- **调试**:API_BASE 改成 console.log 打出来,用户能在浏览器 console 直接看到
+
 ## 2.0.6 (2026-06-15)
 - **修复**:Network 面板显示失败 API 请求 URL 是 `https://host:port/api/health`(没 ingress 前缀)。说明 INGRESS_BASE 实际是空字符串,相对 URL 兜底被 service worker 解析错。改成在模板里渲染**绝对 URL** `request.url_root + request.script_name` 作为 `window.API_BASE`,api() 用绝对 URL fetch,service worker / iframe baseURI 都不能改
 - **调试**:IngressPrefixFix 中间件加 warning 日志,每次请求把 PATH_INFO / SCRIPT_NAME / 4 个候选 ingress 头都打到 add-on 日志。下次复现直接看日志就知道 HA 实际发什么

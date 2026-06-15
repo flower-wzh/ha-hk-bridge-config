@@ -46,6 +46,9 @@ async function api(method, path, body) {
   return data;
 }
 
+// 给 console 调试用
+console.log('[hk-bridge] api() ready, API_BASE =', window.API_BASE);
+
 function domainIcon(domain) {
   const map = {
     light: '💡', switch: '🔌', climate: '❄️', cover: '🪟', lock: '🔒',
