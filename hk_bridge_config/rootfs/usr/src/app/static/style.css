@@ -318,6 +318,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  flex-shrink: 0;          /* flex column 里不要被压扁,bucket 按内容高度撑开,外层 .buckets 整体滚动 */
 }
 .bucket-head {
   display: flex;
@@ -326,7 +327,22 @@ body {
   padding: 14px 18px;
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
 }
+.bucket-head:hover { background: var(--bg-3); }
+.bucket-toggle {
+  font-size: 10px;
+  color: var(--text-3);
+  transition: transform var(--transition);
+  width: 12px;
+  text-align: center;
+}
+.bucket.collapsed .bucket-toggle { transform: rotate(-90deg); }
+.bucket.collapsed .bucket-body { display: none; }
+.bucket.collapsed { border-bottom: none; }
+.bucket.collapsed .bucket-head { border-bottom: none; }
 .bucket-icon { font-size: 18px; }
 .bucket-name {
   font-size: 14px;

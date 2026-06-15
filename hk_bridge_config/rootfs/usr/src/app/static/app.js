@@ -10,6 +10,7 @@ const state = {
   dirty: false,
   initStatus: null,
   collapsedAreas: new Set(),
+  collapsedBuckets: new Set(),  // 折叠状态的 bucket id 集合,默认全展开
   selectedDevice: null,  // 左侧树点击的设备(用于过滤)
   searchTerm: '',
   domainFilter: '',
@@ -380,14 +381,15 @@ function renderBuckets() {
 
 function renderBucket(cat, entitiesById) {
   const el = document.createElement('div');
-  el.className = 'bucket';
+  el.className = 'bucket' + (state.collapsedBuckets.has(cat.id) ? ' collapsed' : '');
   el.dataset.catId = cat.id;
 
   const ids = [...(state.assignment[cat.id] || new Set())];
   const entities = ids.map(id => entitiesById.get(id)).filter(Boolean).filter(entityMatchesFilters);
 
   el.innerHTML = `
-    <div class="bucket-head">
+    <div class="bucket-head" data-action="toggle-bucket">
+      <span class="bucket-toggle">▼</span>
       <span class="bucket-icon">${escapeHtml(cat.icon || '📁')}</span>
       <span class="bucket-name">${escapeHtml(cat.name)}</span>
       <span class="bucket-port">:${cat.port || '—'}</span>
@@ -407,10 +409,20 @@ function renderBucket(cat, entitiesById) {
       body.appendChild(renderEntityCard(e, true));
     }
   }
+  // head 点击折叠/展开
+  const head = el.querySelector('[data-action="toggle-bucket"]');
+  head.onclick = (ev) => {
+    // 清空按钮 / 其他子按钮不应触发折叠
+    if (ev.target.closest('[data-action="clear-bucket"]')) return;
+    if (state.collapsedBuckets.has(cat.id)) state.collapsedBuckets.delete(cat.id);
+    else state.collapsedBuckets.add(cat.id);
+    el.classList.toggle('collapsed');
+  };
   // 清空按钮
   const clearBtn = el.querySelector('[data-action="clear-bucket"]');
   if (clearBtn) {
-    clearBtn.onclick = () => {
+    clearBtn.onclick = (ev) => {
+      ev.stopPropagation();  // 别冒泡到 head 触发折叠
       for (const id of [...state.assignment[cat.id]]) {
         moveEntity(id, '_unassigned');
       }

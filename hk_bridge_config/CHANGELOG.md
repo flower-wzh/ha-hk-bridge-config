@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.9 (2026-06-15)
+- **修复**:`.buckets` 是 flex column 容器,5 个 bucket 默认 `flex-shrink: 1` 互相挤压塞进一个视口,实体多的被压成一条缝。给 `.bucket` 加 `flex-shrink: 0` 后,每个 bucket 按内容高度撑开,buckets 区域整体滚动
+- **新功能**:bucket head 点击折叠/展开。head 加 ▼ 箭头,折叠时旋转到 ▶,body 隐藏。默认全展开,点击"清空"按钮不会触发折叠(stopPropagation)
+
 ## 2.0.8 (2026-06-15)
 - **新功能**:URL 加 `?demo=1` 走静态数据模式(6 分类 × 4 区域 × ~40 实体),不走 API 不写文件,方便先看布局再联调。toast 会提示当前是 demo 模式
 - **修复**:布局塌陷 — 给 `.sidebar` 和 `.content` 加 `min-height: 0`。CSS grid item 默认 min-height: auto,内容很高时会把 grid cell 撑开,内层 `.buckets { overflow-y: auto }` 失效,造成"块内不能滑动"且模块看起来重叠。补上 min-height: 0 后,buckets 区能正常在内部滚动

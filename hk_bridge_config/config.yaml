@@ -1,5 +1,5 @@
 name: HomeKit Bridge 配置器
-version: 2.0.8
+version: 2.0.9
 slug: hk_bridge_config
 description: 设备分组 + 自定义分类 + 实体卡片勾选生成 6 个 HomeKit bridge 配置
 url: https://github.com/flower-wzh/ha-hk-bridge-config
