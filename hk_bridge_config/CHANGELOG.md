@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.4 (2026-06-15)
+- **修复**:api() 不再依赖 `window.INGRESS_BASE`,改用相对 URL(去前导 `/`)。浏览器以当前文档 URL(`/api/hassio_ingress/<token>/`)为基准,自动解析到带前缀的正确路径,无论 `X-Ingress-Path` 头被读到没有都能工作。`INGRESS_BASE` 仍优先(精确)。
+
 ## 2.0.3 (2026-06-15)
 - **修复**:v2.0.2 用了 Werkzeug 的 `ProxyFix(x_prefix=1)`,但 HA ingress 实际设的是 `X-Ingress-Path` 头(老 HA 是 `X-Forwarded-Prefix`),`ProxyFix` 读不到,`request.script_name` 是 Undefined,模板 `tojson` 报 `TypeError` 500。改用自写的 `IngressPrefixFix` 中间件直接读两个头并写到 `SCRIPT_NAME`。
 - **修复**:模板用 `request.script_name|default('', true)` 兜底,万一头是空也不会 500

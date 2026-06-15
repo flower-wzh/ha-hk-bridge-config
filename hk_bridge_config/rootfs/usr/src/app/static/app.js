@@ -34,9 +34,15 @@ function toast(msg, type = 'info', duration = 3000) {
 }
 
 async function api(method, path, body) {
-  // HA ingress 模式下 path 需要带 /api/hassio_ingress/<token>/ 前缀
-  if (window.INGRESS_BASE && path.startsWith('/api/')) {
-    path = window.INGRESS_BASE + path;
+  // HA ingress: 优先用模板注入的 INGRESS_BASE(精确);若没有,把 '/api/...'
+  // 变成 'api/...' 用相对 URL,浏览器会把当前文档 URL(/api/hassio_ingress/<token>/)
+  // 作为基准,自动解析到带前缀的正确路径。
+  if (path.startsWith('/api/')) {
+    if (window.INGRESS_BASE) {
+      path = window.INGRESS_BASE + path;
+    } else {
+      path = path.slice(1);
+    }
   }
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
