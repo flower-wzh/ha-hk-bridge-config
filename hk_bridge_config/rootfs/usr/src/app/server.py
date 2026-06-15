@@ -63,6 +63,10 @@ CATEGORIES_PATH = os.environ.get('CATEGORIES_PATH', '/config/hk_bridge_categorie
 SUPERVISOR_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
 HA_API = 'http://supervisor/core/api'
 
+# 静态资源 cache busting — 每次发版与 config.yaml 同步 bump,模板用作 ?v=
+# 浏览器看到 URL 变就会重新下载,绕过 HA ingress / 浏览器自身的旧文件缓存
+APP_VERSION = '2.0.10'
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
@@ -194,7 +198,7 @@ def index():
     # Flask 3.0 / Werkzeug 3.0 移除了 request.script_name 属性,要用 environ 拿
     # 这是 HA ingress 在 X-Ingress-Path 头里设的值(经中间件写到 SCRIPT_NAME)
     ingress_prefix = request.environ.get('SCRIPT_NAME', '')
-    return render_template('index.html', ingress_prefix=ingress_prefix)
+    return render_template('index.html', ingress_prefix=ingress_prefix, app_version=APP_VERSION)
 
 
 @app.route('/api/health')

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.10 (2026-06-15)
+- **真根因**:v2.0.9 的 bucket flex 修复其实写对了,但用户看不到效果 — Flask 默认给 static 文件设很长的浏览器缓存,HA 升级 add-on 重建容器后浏览器还在用旧 `app.js` / `style.css`
+- **修复**:`server.py` 加 `APP_VERSION` 常量,`index.html` 渲染时给 `<link>` / `<script>` 加 `?v={{ app_version }}`。每次 bump 版本浏览器看到新 URL 就会重新下载,绕过缓存
+- **流程**:发版时同步 bump `config.yaml` 和 `server.py::APP_VERSION` 两个地方
+- **自测**:本地起 Flask + chrome headless + same-origin iframe 模拟点击,验证 bucket 不再被压扁、head 折叠/展开 toggle 正常,截图存档
+
 ## 2.0.9 (2026-06-15)
 - **修复**:`.buckets` 是 flex column 容器,5 个 bucket 默认 `flex-shrink: 1` 互相挤压塞进一个视口,实体多的被压成一条缝。给 `.bucket` 加 `flex-shrink: 0` 后,每个 bucket 按内容高度撑开,buckets 区域整体滚动
 - **新功能**:bucket head 点击折叠/展开。head 加 ▼ 箭头,折叠时旋转到 ▶,body 隐藏。默认全展开,点击"清空"按钮不会触发折叠(stopPropagation)

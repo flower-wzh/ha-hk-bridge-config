@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HomeKit Bridge 配置器</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}">
 </head>
 <body>
   <!-- 顶部 -->
@@ -135,6 +135,6 @@
     window.API_BASE = location.origin + window.INGRESS_BASE;
     console.log('[hk-bridge] INGRESS_BASE =', window.INGRESS_BASE, 'API_BASE =', window.API_BASE);
   </script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ app_version }}"></script>
 </body>
 </html>
