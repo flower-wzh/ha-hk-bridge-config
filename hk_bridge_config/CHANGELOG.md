@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.1 (2026-06-15)
+- **修复**:外网 ingress 反代下 `/static/app.js` `/static/style.css` 写死路径导致 JS/CSS 404 → 改为 `{{ url_for('static', filename='...') }}` 让 Flask 生成正确路径
+
 ## 2.0.0 (2026-06-15)
 - **重写 UI**:现代暗色风格,圆角/阴影/微动画/响应式
 - **设备分组树**:左侧按 area → device 二级树,带勾选状态指示
