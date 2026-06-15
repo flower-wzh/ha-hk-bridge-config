@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.5 (2026-06-15)
+- **修复**:IngressPrefixFix 中间件同时把 `PATH_INFO` 里的 ingress 前缀剥掉。HA 转发时可能保留或剥掉前缀,两种情况都兼容:剥过就跳过,没剥过我们剥,然后 Flask 路由只看到 `/api/...` 而不是 `/api/hassio_ingress/<token>/api/...`
+
 ## 2.0.4 (2026-06-15)
 - **修复**:api() 不再依赖 `window.INGRESS_BASE`,改用相对 URL(去前导 `/`)。浏览器以当前文档 URL(`/api/hassio_ingress/<token>/`)为基准,自动解析到带前缀的正确路径,无论 `X-Ingress-Path` 头被读到没有都能工作。`INGRESS_BASE` 仍优先(精确)。
 

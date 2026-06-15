@@ -24,8 +24,8 @@ class IngressPrefixFix:
     """HA ingress 在请求头里设 X-Ingress-Path(老 HA 是 X-Forwarded-Prefix),
     把这个值映射到 WSGI 的 SCRIPT_NAME,这样 url_for 拼前缀时才能拿到。
 
-    Werkzeug 的 ProxyFix 只认 X-Forwarded-Prefix,对 HA 现在的 X-Ingress-Path
-    不起作用,所以这里写一个最小中间件直接读 HA 的实际头。"""
+    HA 转发时有时会剥前缀有时不剥 — 我们从 PATH_INFO 里把前缀也剥掉,
+    让 Flask 路由只看到真实的 /api/... 路径,而不是 /api/hassio_ingress/<token>/api/...。"""
 
     def __init__(self, app):
         self.app = app
@@ -37,6 +37,10 @@ class IngressPrefixFix:
         )
         if prefix:
             environ['SCRIPT_NAME'] = prefix
+            # 如果 PATH_INFO 还带着前缀,剥掉;HA 已经剥过就不动
+            path_info = environ.get('PATH_INFO', '')
+            if path_info.startswith(prefix):
+                environ['PATH_INFO'] = path_info[len(prefix):] or '/'
         return self.app(environ, start_response)
 
 APP_PORT = int(os.environ.get('APP_PORT', 8099))
