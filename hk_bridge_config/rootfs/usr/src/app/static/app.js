@@ -34,6 +34,10 @@ function toast(msg, type = 'info', duration = 3000) {
 }
 
 async function api(method, path, body) {
+  // HA ingress 模式下 path 需要带 /api/hassio_ingress/<token>/ 前缀
+  if (window.INGRESS_BASE && path.startsWith('/api/')) {
+    path = window.INGRESS_BASE + path;
+  }
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);

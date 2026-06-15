@@ -16,6 +16,7 @@ import requests
 import yaml as pyyaml
 from flask import Flask, request, jsonify, render_template
 from collections import OrderedDict, defaultdict
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import yaml_ops
 
@@ -32,6 +33,17 @@ logging.basicConfig(
 LOG = logging.getLogger('hk_bridge_config')
 
 app = Flask(__name__)
+
+# HA ingress 反代在前面 — 让 Flask 信任 X-Forwarded-Prefix,这样 url_for 会自动
+# 给静态资源/API 拼上 /api/hassio_ingress/<token>/ 前缀。x_prefix=1 是关键
+# (HA ingress 唯一设的 X-Forwarded-* 头就是 prefix)。
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=0,
+    x_prefix=1,
+)
 
 
 # ============== HA API 工具 ==============

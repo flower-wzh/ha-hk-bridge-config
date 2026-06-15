@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2 (2026-06-15)
+- **修复**:给 Flask 加 `ProxyFix(x_prefix=1)` 中间件,ingress 模式下 `url_for` 才能正确生成 `/api/hassio_ingress/<token>/static/...` 前缀
+- **修复**:把 `request.script_name` 暴露为 `window.INGRESS_BASE`,`app.js` 里的 `fetch('/api/...')` 改为带 ingress 前缀(单点在 `api()` 函数内处理)
+
 ## 2.0.1 (2026-06-15)
 - **修复**:外网 ingress 反代下 `/static/app.js` `/static/style.css` 写死路径导致 JS/CSS 404 → 改为 `{{ url_for('static', filename='...') }}` 让 Flask 生成正确路径
 
