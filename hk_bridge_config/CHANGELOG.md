@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0 (2026-06-15)
+- **重写 UI**:现代暗色风格,圆角/阴影/微动画/响应式
+- **设备分组树**:左侧按 area → device 二级树,带勾选状态指示
+- **实体卡片网格**:6 个分类桶各自独立卡片,显示 friendly_name + entity_id + domain + state
+- **自定义分类**:分类管理抽屉,拖拽排序、增删改、规则配置(domain / 名字包含 / entity_id 包含)
+- **手动 + 规则双匹配**:实体先按手动规则,后按自动规则(按分类顺序)
+- **未分配桶**:自动把不匹配任何分类的实体归到这里,可视化看到漏网之鱼
+- **全量保存**:`/api/save_all` 一次写完 6 个 bridge yaml + 分类配置 + 触发 reload
+- **保留兼容**:`/api/bridges` `/api/save` `/api/preview` `/api/auto_assign` 等老接口仍可用
+- **分组数据源**:HA area/device/entity registry(失败则降级到 entity_id 启发式)
+- **自动跳过**:旧 `midea_` 前缀实体(参考 reference_ha_integrations)
+
 ## 1.0.0 (2026-06-14)
 - 首次发布
 - 可视化调整 6 个 HomeKit bridge 的 include_entities 和 entity_config

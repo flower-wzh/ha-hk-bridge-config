@@ -1,23 +1,27 @@
 """
-HomeKit Bridge 配置器 - Flask 后端
+HomeKit Bridge 配置器 - Flask 后端 (v2)
+新增:
+  - /api/devices: 返回 area → device → entities 树(含 friendly_name / state / in_config)
+  - /api/categories [GET/POST]: 读/写自定义 bridge 分类
+  - /api/auto_assign: 按分类规则给所有 entity 自动归类
+  - /api/save_all: 全量保存(分类 + 分配 + 名称)
+  - /api/init_status: 判断当前是首次还是修改模式
+兼容: /api/bridges /api/save /api/reload /api/preview /api/backups /api/restore
 """
 import os
-import sys
+import re
 import json
 import logging
 import requests
 import yaml as pyyaml
-from flask import Flask, request, jsonify, render_template, Response
-from collections import OrderedDict
+from flask import Flask, request, jsonify, render_template
+from collections import OrderedDict, defaultdict
 
 import yaml_ops
 
-# ============== 配置 ==============
 APP_PORT = int(os.environ.get('APP_PORT', 8099))
-YAML_PATH = os.environ.get(
-    'YAML_PATH',
-    '/config/homekit_bridges.yaml'  # 默认值,add-on 在容器内 /config 即 HA 的 /config
-)
+YAML_PATH = os.environ.get('YAML_PATH', '/config/homekit_bridges.yaml')
+CATEGORIES_PATH = os.environ.get('CATEGORIES_PATH', '/config/hk_bridge_categories.yaml')
 SUPERVISOR_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
 HA_API = 'http://supervisor/core/api'
 
@@ -30,7 +34,8 @@ LOG = logging.getLogger('hk_bridge_config')
 app = Flask(__name__)
 
 
-# ============== 工具 ==============
+# ============== HA API 工具 ==============
+
 def ha_headers():
     return {
         'Authorization': f'Bearer {SUPERVISOR_TOKEN}',
@@ -39,23 +44,108 @@ def ha_headers():
 
 
 def ha_get(path, **params):
-    """调 HA REST API"""
     url = HA_API + path
     LOG.info(f"GET {url} params={params}")
-    r = requests.get(url, headers=ha_headers(), params=params, timeout=15)
+    r = requests.get(url, headers=ha_headers(), params=params, timeout=20)
     r.raise_for_status()
     return r.json()
 
 
 def ha_post(path, json_body):
     url = HA_API + path
-    LOG.info(f"POST {url} body_keys={list(json_body.keys()) if isinstance(json_body, dict) else type(json_body).__name__}")
+    LOG.info(f"POST {url}")
     r = requests.post(url, headers=ha_headers(), json=json_body, timeout=30)
     r.raise_for_status()
     return r.json() if r.text else []
 
 
+# ============== 数据聚合 ==============
+
+# 跳过的 entity 模式(可优化)
+SKIP_ENTITY_PREFIXES = ('midea_',)  # 旧 midea_smart_home 残留
+SKIP_DOMAINS = set()  # 不过滤 domain,前端 filter
+
+
+def _should_skip(entity_id):
+    return any(entity_id.startswith(p + '.') for p in SKIP_ENTITY_PREFIXES)
+
+
+def _area_lookup():
+    """从 HA area registry 取 area_id -> name。失败返回 {}"""
+    try:
+        areas = ha_get('/config/area_registry/list')
+        return {a['area_id']: a['name'] for a in areas if a.get('area_id')}
+    except Exception as e:
+        LOG.warning(f"area_registry 403/失败: {e}")
+        return {}
+
+
+def _entity_area_lookup():
+    """entity_id -> area_id。失败返回 {}"""
+    try:
+        ents = ha_get('/config/entity_registry/list')
+        return {e['entity_id']: e.get('area_id') for e in ents if e.get('entity_id')}
+    except Exception as e:
+        LOG.warning(f"entity_registry 失败: {e}")
+        return {}
+
+
+def _device_lookup():
+    """device_id -> {name, area_id, manufacturer, model}"""
+    try:
+        devs = ha_get('/config/device_registry/list')
+        return {
+            d['id']: {
+                'name': d.get('name') or '未命名设备',
+                'area_id': d.get('area_id'),
+                'manufacturer': d.get('manufacturer'),
+                'model': d.get('model'),
+            }
+            for d in devs if d.get('id')
+        }
+    except Exception as e:
+        LOG.warning(f"device_registry 失败: {e}")
+        return {}
+
+
+def _device_id_for_entity(entity_id, ent_to_device):
+    """entity_id -> device_id"""
+    return ent_to_device.get(entity_id)
+
+
+def _entity_device_lookup():
+    try:
+        ents = ha_get('/config/entity_registry/list')
+        return {e['entity_id']: e.get('device_id') for e in ents if e.get('entity_id')}
+    except Exception as e:
+        LOG.warning(f"entity_registry 失败: {e}")
+        return {}
+
+
+def _device_id_prefix(entity_id):
+    """从 entity_id 抽 device 段: sensor.zimi_cn_xxx_temperature -> zimi_cn_xxx"""
+    parts = entity_id.split('.', 1)
+    if len(parts) < 2:
+        return entity_id
+    rest = parts[1]
+    # 找连续 4 段以上(数字/字母)作为 device 段
+    toks = rest.split('_')
+    if len(toks) >= 4 and any(re.match(r'^[0-9a-f]{6,}$', t) for t in toks):
+        return '_'.join(toks[:3])
+    # 否则用前 2 段
+    return '_'.join(toks[:2])
+
+
+def _friendly_name_device_prefix(friendly_name):
+    """从 friendly_name '美的中央空调 当前温度' 抽 '美的中央空调'"""
+    if not friendly_name:
+        return ''
+    # 中文名通常前 4-8 字是设备名
+    return friendly_name.split(' ')[0] if ' ' in friendly_name else friendly_name[:6]
+
+
 # ============== 路由 ==============
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -63,31 +153,275 @@ def index():
 
 @app.route('/api/health')
 def health():
-    return jsonify({'ok': True, 'yaml_path': YAML_PATH, 'has_token': bool(SUPERVISOR_TOKEN)})
+    return jsonify({
+        'ok': True,
+        'yaml_path': YAML_PATH,
+        'categories_path': CATEGORIES_PATH,
+        'has_token': bool(SUPERVISOR_TOKEN),
+    })
 
+
+@app.route('/api/init_status')
+def init_status():
+    """判断首次还是修改模式"""
+    try:
+        bridges = yaml_ops.read_yaml(YAML_PATH)
+        have_yaml = True
+        n = len(bridges)
+        existing_entities = set()
+        for b in bridges:
+            for e in (b.get('filter', {}) or {}).get('include_entities', []) or []:
+                existing_entities.add(e)
+    except Exception:
+        have_yaml = False
+        n = 0
+        existing_entities = set()
+
+    return jsonify({
+        'have_yaml': have_yaml,
+        'bridge_count': n,
+        'existing_entity_count': len(existing_entities),
+        'is_first_run': not have_yaml or n == 0,
+    })
+
+
+@app.route('/api/devices')
+def api_devices():
+    """
+    返回 area -> device -> entities 树:
+    [
+      {
+        'area_id': 'xxx', 'area_name': '客厅',
+        'devices': [
+          { 'key': '...', 'name': '美的中央空调',
+            'manufacturer': '...', 'model': '...',
+            'entities': [{'entity_id', 'domain', 'friendly_name', 'state', 'in_config'}]
+          }
+        ]
+      },
+      { 'area_id': None, 'area_name': '未分组', 'devices': [...] }
+    ]
+    """
+    try:
+        bridges = yaml_ops.read_yaml(YAML_PATH)
+        existing = set()
+        for b in bridges:
+            for e in (b.get('filter', {}) or {}).get('include_entities', []) or []:
+                existing.add(e)
+    except Exception:
+        existing = set()
+
+    states = ha_get('/states')
+    areas = _area_lookup()
+    ent_to_area = _entity_area_lookup()
+    devs = _device_lookup()
+    ent_to_dev = _entity_device_lookup()
+
+    # 按 (area_id, device_key) 聚合
+    bucket = defaultdict(lambda: defaultdict(list))
+    for s in states:
+        eid = s['entity_id']
+        if _should_skip(eid):
+            continue
+        domain = eid.split('.')[0]
+        fname = (s.get('attributes') or {}).get('friendly_name', eid)
+
+        # 优先级: device_registry > entity_registry > 启发式
+        dev_id = ent_to_dev.get(eid)
+        if dev_id and dev_id in devs:
+            dev_name = devs[dev_id]['name']
+            area_id = devs[dev_id].get('area_id') or ent_to_area.get(eid)
+        else:
+            dev_name = _friendly_name_device_prefix(fname) or _device_id_prefix(eid)
+            area_id = ent_to_area.get(eid)
+            dev_id = f'heuristic:{dev_name}'
+
+        bucket[area_id][dev_id].append({
+            'entity_id': eid,
+            'domain': domain,
+            'friendly_name': fname,
+            'state': s.get('state'),
+            'in_config': eid in existing,
+            'unit': (s.get('attributes') or {}).get('unit_of_measurement'),
+            'device_class': (s.get('attributes') or {}).get('device_class'),
+        })
+
+    out = []
+    for area_id, devs_map in bucket.items():
+        area_name = areas.get(area_id, '未分组') if area_id else '未分组'
+        dev_list = []
+        for dev_id, ents in devs_map.items():
+            if dev_id in devs:
+                d = devs[dev_id]
+                dev_list.append({
+                    'key': dev_id,
+                    'name': d['name'],
+                    'manufacturer': d.get('manufacturer'),
+                    'model': d.get('model'),
+                    'entities': sorted(ents, key=lambda e: e['entity_id']),
+                })
+            else:
+                # 启发式设备,用第一个 entity 的 prefix 命名
+                first = ents[0]
+                dev_name = _friendly_name_device_prefix(first['friendly_name']) or _device_id_prefix(first['entity_id'])
+                dev_list.append({
+                    'key': dev_id,
+                    'name': dev_name,
+                    'manufacturer': None,
+                    'model': None,
+                    'entities': sorted(ents, key=lambda e: e['entity_id']),
+                })
+        # 设备按名字排序
+        dev_list.sort(key=lambda d: d['name'])
+        out.append({
+            'area_id': area_id,
+            'area_name': area_name,
+            'devices': dev_list,
+            'entity_count': sum(len(d['entities']) for d in dev_list),
+        })
+    # 区域排序: 已命名在前
+    out.sort(key=lambda a: (a['area_name'] == '未分组', a['area_name']))
+    return jsonify({'areas': out})
+
+
+@app.route('/api/categories', methods=['GET'])
+def get_categories():
+    cats = yaml_ops.read_categories(CATEGORIES_PATH)
+    return jsonify({'categories': cats, 'is_default': not os.path.exists(CATEGORIES_PATH)})
+
+
+@app.route('/api/categories', methods=['POST'])
+def save_categories():
+    data = request.get_json(force=True)
+    cats = data.get('categories', [])
+    if not isinstance(cats, list):
+        return jsonify({'error': 'categories must be list'}), 400
+    try:
+        bak = yaml_ops.write_categories(CATEGORIES_PATH, cats)
+    except Exception as e:
+        LOG.exception("write categories failed")
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'ok': True, 'backup': bak, 'count': len(cats)})
+
+
+@app.route('/api/auto_assign', methods=['POST'])
+def api_auto_assign():
+    """
+    body: {}  (从 /api/devices 拉数据后,前端直接对 entity 调匹配)
+    返回: {assignment: {category_id: [entity_ids], '_unassigned': [...]}}
+    """
+    data = request.get_json(force=True) or {}
+    cats = yaml_ops.read_categories(CATEGORIES_PATH)
+    # 前端可以传 entities(避免再调 /api/devices),否则这里再拉
+    if 'entities' in data:
+        entities = data['entities']
+    else:
+        states = ha_get('/states')
+        entities = [{
+            'entity_id': s['entity_id'],
+            'domain': s['entity_id'].split('.')[0],
+            'friendly_name': (s.get('attributes') or {}).get('friendly_name', s['entity_id']),
+        } for s in states if not _should_skip(s['entity_id'])]
+    assignment = yaml_ops.auto_assign(entities, cats)
+    return jsonify({'assignment': assignment})
+
+
+@app.route('/api/save_all', methods=['POST'])
+def save_all():
+    """
+    body:
+      {
+        "categories": [...],          # 分类配置(更新)
+        "assignment": {cat_id: [ent_id], '_unassigned': [...]},  # 分配结果
+        "name_overrides": {ent_id: 'name'},  # 自定义名
+        "reload_bridges": true        # 是否触发 reload
+      }
+    """
+    data = request.get_json(force=True)
+    cats = data.get('categories')
+    assignment = data.get('assignment') or {}
+    name_overrides = data.get('name_overrides') or {}
+    do_reload = data.get('reload_bridges', True)
+
+    if cats:
+        try:
+            yaml_ops.write_categories(CATEGORIES_PATH, cats)
+        except Exception as e:
+            return jsonify({'error': f'write categories failed: {e}'}), 500
+    else:
+        cats = yaml_ops.read_categories(CATEGORIES_PATH)
+
+    try:
+        bridges_existing = yaml_ops.read_yaml(YAML_PATH)
+    except FileNotFoundError:
+        bridges_existing = []
+    except Exception as e:
+        return jsonify({'error': f'read bridges yaml failed: {e}'}), 500
+
+    # 生成新 bridges
+    new_bridges = yaml_ops.generate_bridges_from_categories(
+        bridges_existing, cats, assignment, name_overrides
+    )
+
+    # 写入 yaml
+    try:
+        bak_bridges = yaml_ops.write_yaml(YAML_PATH, new_bridges)
+    except Exception as e:
+        LOG.exception("write bridges yaml failed")
+        return jsonify({'error': f'write yaml failed: {e}'}), 500
+
+    # 触发 reload
+    reload_result = None
+    if do_reload and SUPERVISOR_TOKEN:
+        try:
+            entries = ha_get('/config/config_entries/entry')
+            hk = [e for e in entries if e.get('domain') == 'homekit' and e.get('source') == 'import']
+            results = []
+            for e in hk:
+                try:
+                    ha_post('/services/homeassistant/reload_config_entry', {'entry_id': e['entry_id']})
+                    results.append({'title': e.get('title'), 'ok': True})
+                except Exception as ex:
+                    results.append({'title': e.get('title'), 'ok': False, 'error': str(ex)})
+            reload_result = results
+        except Exception as e:
+            LOG.warning(f"reload failed: {e}")
+            reload_result = {'error': str(e)}
+
+    return jsonify({
+        'ok': True,
+        'backup': bak_bridges,
+        'reload': reload_result,
+        'bridges': [
+            {
+                'port': b['port'],
+                'name': b['name'],
+                'count': len((b.get('filter', {}) or {}).get('include_entities', []) or []),
+            } for b in new_bridges
+        ],
+    })
+
+
+# ============== 兼容旧 API ==============
 
 @app.route('/api/bridges')
 def get_bridges():
-    """读 yaml + HA states,返回 6 bridge 详情"""
     try:
         bridges = yaml_ops.read_yaml(YAML_PATH)
     except Exception as e:
-        LOG.exception("Read yaml failed")
         return jsonify({'error': str(e)}), 500
 
-    # 从 HA 拿所有 entity 的 friendly_name(用本地 token 也行,这里用 supervisor token)
     entity_map = {}
     if SUPERVISOR_TOKEN:
         try:
-            states = ha_get('/states')
-            for s in states:
+            for s in ha_get('/states'):
                 entity_map[s['entity_id']] = {
                     'friendly_name': s['attributes'].get('friendly_name', s['entity_id']),
                     'state': s.get('state'),
                     'domain': s['entity_id'].split('.')[0],
                 }
         except Exception as e:
-            LOG.warning(f"Failed to fetch HA states: {e}")
+            LOG.warning(f"states failed: {e}")
 
     out = []
     for i, b in enumerate(bridges):
@@ -116,9 +450,8 @@ def get_bridges():
 
 @app.route('/api/entities')
 def get_entities():
-    """HA 全部 entity,带 friendly_name,用于「+ 添加 entity」"""
     if not SUPERVISOR_TOKEN:
-        return jsonify({'entities': [], 'error': 'No SUPERVISOR_TOKEN'})
+        return jsonify({'entities': [], 'error': 'No SUPERVISOR_TOKEN'}), 503
     try:
         states = ha_get('/states')
     except Exception as e:
@@ -126,6 +459,8 @@ def get_entities():
     out = []
     for s in states:
         ent = s['entity_id']
+        if _should_skip(ent):
+            continue
         out.append({
             'entity_id': ent,
             'domain': ent.split('.')[0],
@@ -137,15 +472,7 @@ def get_entities():
 
 @app.route('/api/save', methods=['POST'])
 def save():
-    """
-    body:
-      {
-        "bridge_id": 51801,       // port
-        "included_entities": [...],
-        "entity_config": {"entity_id": {"name": "..."}, ...}
-      }
-    写 yaml + 备份 + reload
-    """
+    """兼容旧 API: 单 bridge 修改"""
     data = request.get_json(force=True)
     bridge_id = data.get('bridge_id')
     included = data.get('included_entities', [])
@@ -170,36 +497,11 @@ def save():
         LOG.exception("Write yaml failed")
         return jsonify({'error': f'Write failed: {e}'}), 500
 
-    # 触发 reload 6 个 bridge
-    reload_result = None
-    if SUPERVISOR_TOKEN:
-        try:
-            entries = ha_get('/config/config_entries/entry')
-            hk_entries = [e for e in entries if e.get('domain') == 'homekit' and e.get('source') == 'import']
-            results = []
-            for e in hk_entries:
-                eid = e['entry_id']
-                try:
-                    ha_post('/services/homeassistant/reload_config_entry', {'entry_id': eid})
-                    results.append({'entry_id': eid, 'title': e.get('title'), 'ok': True})
-                except Exception as ex:
-                    results.append({'entry_id': eid, 'title': e.get('title'), 'ok': False, 'error': str(ex)})
-            reload_result = results
-        except Exception as e:
-            LOG.warning(f"Reload bridge entries failed: {e}")
-            reload_result = {'error': str(e)}
-
-    return jsonify({
-        'ok': True,
-        'backup': bak,
-        'reload': reload_result,
-        'bridge': {'port': bridge_id, 'count': len(included)},
-    })
+    return jsonify({'ok': True, 'backup': bak, 'bridge': {'port': bridge_id, 'count': len(included)}})
 
 
 @app.route('/api/reload', methods=['POST'])
 def reload_all():
-    """手动 reload 6 个 bridge(不修改 yaml)"""
     if not SUPERVISOR_TOKEN:
         return jsonify({'error': 'No SUPERVISOR_TOKEN'}), 503
     try:
@@ -219,7 +521,6 @@ def reload_all():
 
 @app.route('/api/preview', methods=['POST'])
 def preview():
-    """生成 yaml diff 预览(不改文件)"""
     data = request.get_json(force=True)
     bridge_id = data.get('bridge_id')
     included = data.get('included_entities', [])
@@ -230,15 +531,10 @@ def preview():
 
     try:
         bridges = yaml_ops.read_yaml(YAML_PATH)
-    except Exception as e:
-        return jsonify({'error': f'Read failed: {e}'}), 500
-
-    try:
         new_bridges = yaml_ops.apply_changes(bridges, bridge_id, included, ec)
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    # 找原 bridge 和新 bridge
     orig = next((b for b in bridges if str(b.get('port')) == str(bridge_id)), None)
     new = next((b for b in new_bridges if str(b.get('port')) == str(bridge_id)), None)
     if not orig or not new:
@@ -248,34 +544,19 @@ def preview():
     new_inc = set(included)
     added = sorted(new_inc - orig_inc)
     removed = sorted(orig_inc - new_inc)
-
-    orig_ec = orig.get('entity_config', {}) or {}
-    new_ec_dict = {k: (v.get('name', '') if isinstance(v, dict) else '') for k, v in ec.items() if v}
-    name_changes = []
-    for ent, new_name in new_ec_dict.items():
-        old_name = (orig_ec.get(ent, {}) or {}).get('name', '') if isinstance(orig_ec.get(ent), dict) else ''
-        if old_name != new_name:
-            name_changes.append({'entity_id': ent, 'old': old_name, 'new': new_name})
-
     return jsonify({
-        'added': added,
-        'removed': removed,
-        'name_changes': name_changes,
-        'count_old': len(orig_inc),
-        'count_new': len(new_inc),
+        'added': added, 'removed': removed,
+        'count_old': len(orig_inc), 'count_new': len(new_inc),
     })
 
 
 @app.route('/api/backups')
-def list_backups():
-    """列出备份文件"""
-    backups = yaml_ops.list_backups(YAML_PATH)
-    return jsonify({'backups': backups, 'count': len(backups)})
+def list_backups_route():
+    return jsonify({'backups': yaml_ops.list_backups(YAML_PATH), 'count': len(yaml_ops.list_backups(YAML_PATH))})
 
 
 @app.route('/api/restore', methods=['POST'])
 def restore():
-    """从 .bak 恢复"""
     data = request.get_json(force=True)
     bak = data.get('backup_path')
     if not bak:
@@ -284,17 +565,11 @@ def restore():
         yaml_ops.restore_backup(bak, YAML_PATH)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    # 尝试 reload(没 token 时会返回 error,但 yaml 已成功恢复)
-    try:
-        resp = reload_all()
-        reload_result = resp[0].get_json() if isinstance(resp, tuple) else resp.get_json()
-    except Exception as e:
-        reload_result = {'error': str(e)}
-    return jsonify({'ok': True, 'reload': reload_result})
+    return jsonify({'ok': True})
 
 
 # ============== 启动 ==============
+
 if __name__ == '__main__':
-    LOG.info(f"HomeKit Bridge 配置器 starting, port={APP_PORT}, yaml={YAML_PATH}, has_token={bool(SUPERVISOR_TOKEN)}")
-    # disable Flask reloader (容器中)
+    LOG.info(f"HomeKit Bridge 配置器 v2 starting, port={APP_PORT}, yaml={YAML_PATH}")
     app.run(host='0.0.0.0', port=APP_PORT, debug=False, use_reloader=False)
