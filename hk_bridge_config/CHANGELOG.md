@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0 (2026-06-18)
+- **UI 重构**:从 v2 通用深色 dashboard 升级为"工作台"风格 — 6 个 HomeKit bridge 视觉化成 rack-mount 模块,port 编号作为主标识,左侧 4px category 色 rail
+- **HA 深/浅色自适应**:启动时读取父级 HA 文档的 CSS 变量(`--primary-color` / `--card-background-color` / `--primary-text-color` / `--divider-color` 等),通过 `MutationObserver` 监听主题切换,实时同步。standalone 模式(本地 demo / 裸开)走 `prefers-color-scheme` fallback
+- **Per-bucket dirty 状态**:保存后记录 `savedAssignment` baseline,每个 bucket 自己比较,只在被改动的 bridge 上显示橙色 dot + 边框,扫一眼就知道哪些 bridge 有未保存修改
+- **去 emoji 化**:顶部 brand mark 改为 `HK` 色块,工具栏图标用 unicode 符号(↻ ▤ ⚙),状态 pill 用 `ok/warn/err` 三态颜色而非 `✓ ⚠ ✗` 表情
+- **签名元素**:bucket 头部重设计为模块卡 — 大字号 mono port 编号 + category 色 rail + entity 数 chip,视觉上把"6 个独立 HomeKit bridge"作为产品核心而不是边角数据
+- **响应式**:sidebar 在窄屏下折叠,`--hk-sidebar-w` 走 token 调整即可
+
 ## 2.0.10 (2026-06-15)
 - **真根因**:v2.0.9 的 bucket flex 修复其实写对了,但用户看不到效果 — Flask 默认给 static 文件设很长的浏览器缓存,HA 升级 add-on 重建容器后浏览器还在用旧 `app.js` / `style.css`
 - **修复**:`server.py` 加 `APP_VERSION` 常量,`index.html` 渲染时给 `<link>` / `<script>` 加 `?v={{ app_version }}`。每次 bump 版本浏览器看到新 URL 就会重新下载,绕过缓存

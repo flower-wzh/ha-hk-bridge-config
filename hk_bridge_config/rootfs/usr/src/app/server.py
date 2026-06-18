@@ -65,7 +65,7 @@ HA_API = 'http://supervisor/core/api'
 
 # 静态资源 cache busting — 每次发版与 config.yaml 同步 bump,模板用作 ?v=
 # 浏览器看到 URL 变就会重新下载,绕过 HA ingress / 浏览器自身的旧文件缓存
-APP_VERSION = '2.0.10'
+APP_VERSION = '2.1.0'
 
 logging.basicConfig(
     level=logging.INFO,

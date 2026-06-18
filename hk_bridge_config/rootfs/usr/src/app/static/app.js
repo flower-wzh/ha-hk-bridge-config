@@ -1,21 +1,26 @@
 /*
- * HomeKit Bridge 配置器 - v2 前端
+ * HomeKit Bridge 配置器 - v2.1 前端
  * 设备分组 + 自定义分类 + 实体卡片勾选
+ * 自适应 Home Assistant 深/浅色 (读取父级 HA 文档 CSS 变量)
  */
 
 const state = {
   areas: [],          // /api/devices 树
   categories: [],     // /api/categories 6 个分类
-  assignment: {},     // {cat_id: Set<entity_id>, '_unassigned': Set}
+  assignment: {},     // 当前分配 {cat_id: Set<entity_id>, '_unassigned': Set}
+  savedAssignment: null,  // 最近一次保存到磁盘的分配(Set→Array 后),用于算 per-bucket dirty
   dirty: false,
   initStatus: null,
   collapsedAreas: new Set(),
-  collapsedBuckets: new Set(),  // 折叠状态的 bucket id 集合,默认全展开
-  selectedDevice: null,  // 左侧树点击的设备(用于过滤)
+  collapsedBuckets: new Set(),
+  selectedDevice: null,
   searchTerm: '',
   domainFilter: '',
   bucketFilter: '',
   treeSearchTerm: '',
+  haTheme: null,  // { primaryBackground, cardBackground, ... } 当前读到的 HA 主题
+  themeName: '',
+  themeMode: '',  // 'light' | 'dark'
 };
 
 // ============== Demo 模式 ==============
@@ -157,17 +162,164 @@ function stateClass(state) {
   return '';
 }
 
+// ============== 主题: 读 HA 父级文档的 CSS 变量 ==============
+// HA 在 ingress iframe 的父级文档 :root 上挂了一组设计变量
+// (--primary-color, --card-background-color, --primary-text-color, --divider-color 等)
+// 我们读出来写回自己的 :root,主题就跟 HA 实时同步,包括运行时切换
+function readHATheme() {
+  try {
+    const parentDoc = window.parent && window.parent.document;
+    if (!parentDoc || parentDoc === document) return null;
+    const parentRoot = parentDoc.documentElement;
+    const style = parentDoc.defaultView ? parentDoc.defaultView.getComputedStyle(parentRoot) : null;
+    if (!style) return null;
+    const get = (k) => style.getPropertyValue(k).trim();
+    return {
+      primaryBackground: get('--primary-background-color'),
+      cardBackground:    get('--card-background-color'),
+      primaryText:       get('--primary-text-color'),
+      secondaryText:     get('--secondary-text-color'),
+      disabledText:      get('--disabled-text-color'),
+      divider:           get('--divider-color'),
+      primary:           get('--primary-color'),
+      textPrimary:       get('--text-primary-color'),
+      success:           get('--success-color'),
+      warning:           get('--warning-color'),
+      error:             get('--error-color'),
+      themeName:         parentRoot.getAttribute('hass-theme')
+                         || parentRoot.getAttribute('data-theme-name')
+                         || parentRoot.getAttribute('theme')
+                         || '',
+      isDark:            parentRoot.hasAttribute('dark')
+                         || (parentRoot.getAttribute('hass-theme') || '').toLowerCase().includes('dark'),
+    };
+  } catch (e) {
+    // 跨域或父级不可达(本地 demo / 裸开)
+    return null;
+  }
+}
+
+function hexToRgb(hex) {
+  if (!hex) return null;
+  const m = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  if (!m) return null;
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+function luminance(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map(x => {
+    const v = x / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (!theme) {
+    // standalone 模式(本地 demo / 裸开) — 用 prefers-color-scheme 走 CSS fallback
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    root.dataset.themeMode = mql.matches ? 'dark' : 'light';
+    root.dataset.themeSource = 'system';
+    return;
+  }
+  // 写 HA 变量到我们的 :root
+  const set = (k, v) => v && root.style.setProperty(k, v);
+  set('--hk-bg',            theme.primaryBackground);
+  set('--hk-surface',       theme.cardBackground);
+  set('--hk-text',          theme.primaryText);
+  set('--hk-text-muted',    theme.secondaryText);
+  set('--hk-text-disabled', theme.disabledText);
+  set('--hk-border',        theme.divider);
+  set('--hk-accent',        theme.primary);
+  set('--hk-accent-fg',     theme.textPrimary);
+  set('--hk-success',       theme.success);
+  set('--hk-warning',       theme.warning);
+  set('--hk-danger',        theme.error);
+
+  // 模式判断:HA 属性优先,否则用 primaryBackground 亮度
+  let mode = '';
+  if (theme.isDark) mode = 'dark';
+  else if (theme.primaryBackground) {
+    const l = luminance(theme.primaryBackground);
+    if (l !== null) mode = l < 0.5 ? 'dark' : 'light';
+  }
+  root.dataset.themeMode = mode || 'light';
+  root.dataset.themeSource = 'home-assistant';
+  root.dataset.themeName = theme.themeName || '';
+
+  // 状态指示器 tooltip
+  const ind = $('#theme-indicator');
+  if (ind) ind.title = `主题: Home Assistant${theme.themeName ? ' · ' + theme.themeName : ''} · ${mode || 'auto'}`;
+  // 刷新 brand subtitle(主题变化时也同步 entities 计数)
+  updateBrandSubtitle();
+}
+
+function updateBrandSubtitle() {
+  const sub = $('#brand-subtitle');
+  if (!sub) return;
+  if (!state.categories.length) {
+    sub.textContent = '6 bridges · 加载中…';
+    return;
+  }
+  const total = state.categories.reduce((s, c) => s + (state.assignment[c.id]?.size || 0), 0);
+  const totalAll = state.areas.reduce((s, a) => s + a.entity_count, 0);
+  sub.textContent = `${state.categories.length} bridges · ${total}/${totalAll} entities`;
+}
+
+function watchHATheme() {
+  try {
+    const parentRoot = window.parent && window.parent.document && window.parent.document.documentElement;
+    if (!parentRoot) return;
+    const obs = new MutationObserver(() => {
+      const t = readHATheme();
+      state.haTheme = t;
+      applyTheme(t);
+    });
+    obs.observe(parentRoot, {
+      attributes: true,
+      attributeFilter: ['hass-theme', 'theme', 'data-theme-name', 'class', 'style', 'dark'],
+    });
+  } catch (e) { /* ignore */ }
+  // 兜底:浏览器 OS 主题变化(standalone 模式)
+  if (window.matchMedia) {
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    mql.addEventListener?.('change', () => {
+      if (!state.haTheme) applyTheme(null);
+    });
+  }
+}
+
 // ============== 初始化 ==============
 window.addEventListener('DOMContentLoaded', async () => {
   bindUI();
+  // 主题最先应用,避免初始 flash
+  state.haTheme = readHATheme();
+  applyTheme(state.haTheme);
+  watchHATheme();
   if (DEMO) {
     state.areas = window.__DEMO_AREAS__;
     state.categories = window.__DEMO_CATEGORIES__;
     state.assignment = window.__DEMO_ASSIGNMENT__;
-    // status pill 假装 ok
-    $('#stat-yaml').textContent = '✓ homekit_bridges.yaml';
-    $('#stat-token').textContent = '🔑 token OK (demo)';
-    toast('🎨 Demo 模式 — 静态数据,不会写文件', 'info', 5000);
+    // 把 demo 当前分配当 saved baseline,这样初始无 dirty
+    snapshotAssignment();
+    // ?dirty=1 测试钩子:从 _unassigned 挪一个 entity 进第一个分类,触发 per-bucket modified
+    if (new URLSearchParams(location.search).get('dirty') === '1') {
+      const target = state.categories[0].id;
+      const u = [...state.assignment._unassigned];
+      if (u.length) {
+        state.assignment._unassigned.delete(u[0]);
+        state.assignment[target].add(u[0]);
+        state.dirty = true;
+      }
+    }
+    $('#stat-yaml').textContent = 'homekit_bridges.yaml';
+    $('#stat-yaml').classList.add('ok');
+    $('#stat-token').textContent = 'token OK (demo)';
+    $('#stat-token').classList.add('ok');
+    toast('Demo 模式 — 静态数据,不会写文件', 'info', 5000);
     render();
     return;
   }
@@ -175,17 +327,33 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadInitStatus();
   await Promise.all([loadDevices(), loadCategories()]);
   await autoAssign();
+  snapshotAssignment();  // 初始自动归类作为 baseline
   render();
 });
 
 async function loadHealth() {
+  const yamlPill = $('#stat-yaml');
+  const tokenPill = $('#stat-token');
+  yamlPill.classList.remove('ok', 'warn', 'err');
+  tokenPill.classList.remove('ok', 'warn', 'err');
   try {
     const h = await api('GET', '/api/health');
-    $('#stat-yaml').textContent = h.has_token ? '✓ ' + (h.yaml_path.split('/').pop()) : '⚠ yaml 路径异常';
-    $('#stat-token').textContent = h.has_token ? '🔑 token OK' : '⚠ 无 token';
+    if (h.has_token) {
+      yamlPill.textContent = (h.yaml_path.split('/').pop());
+      yamlPill.classList.add('ok');
+      tokenPill.textContent = 'token OK';
+      tokenPill.classList.add('ok');
+    } else {
+      yamlPill.textContent = 'yaml 路径异常';
+      yamlPill.classList.add('warn');
+      tokenPill.textContent = '无 token';
+      tokenPill.classList.add('warn');
+    }
   } catch (e) {
-    $('#stat-yaml').textContent = '✗ 后端不可达';
-    $('#stat-token').textContent = '✗';
+    yamlPill.textContent = '后端不可达';
+    yamlPill.classList.add('err');
+    tokenPill.textContent = '离线';
+    tokenPill.classList.add('err');
   }
 }
 
@@ -234,6 +402,7 @@ function render() {
   updateDirtyStatus();
   updateSelectionCount();
   updateTreeStats();
+  updateBrandSubtitle();
 }
 
 function updateTreeStats() {
@@ -362,39 +531,64 @@ function renderBuckets() {
   const container = $('#buckets-container');
   container.innerHTML = '';
   // 准备所有 entity 的索引
-  const allEntities = [];
   const entitiesById = new Map();
   for (const a of state.areas) for (const d of a.devices) for (const e of d.entities) {
-    allEntities.push(e);
     entitiesById.set(e.entity_id, e);
   }
 
   // 渲染分类桶
-  for (const cat of state.categories) {
-    const bucketEl = renderBucket(cat, entitiesById);
+  state.categories.forEach((cat, idx) => {
+    const bucketEl = renderBucket(cat, entitiesById, idx);
     container.appendChild(bucketEl);
-  }
-  // 渲染未分配桶
-  const unassignedCat = { id: '_unassigned', name: '未分配', icon: '❓', port: '—' };
-  container.appendChild(renderBucket(unassignedCat, entitiesById));
+  });
+  // 渲染未分配桶 — 用固定灰色 hue (220, 0% sat)
+  const unassignedCat = { id: '_unassigned', name: '未分配', icon: '◌', port: '—' };
+  const unassignedIdx = state.categories.length;
+  container.appendChild(renderBucket(unassignedCat, entitiesById, unassignedIdx, true));
 }
 
-function renderBucket(cat, entitiesById) {
+function renderBucket(cat, entitiesById, idx, isUnassigned = false) {
   const el = document.createElement('div');
   el.className = 'bucket' + (state.collapsedBuckets.has(cat.id) ? ' collapsed' : '');
+  if (!isUnassigned) {
+    el.style.setProperty('--hk-cat-hue', String((idx * 47) % 360));
+  } else {
+    el.style.setProperty('--hk-cat-hue', '220');
+    el.style.setProperty('--hk-cat-color', 'color-mix(in srgb, var(--hk-text-disabled) 80%, transparent)');
+  }
   el.dataset.catId = cat.id;
 
   const ids = [...(state.assignment[cat.id] || new Set())];
   const entities = ids.map(id => entitiesById.get(id)).filter(Boolean).filter(entityMatchesFilters);
+  const modified = !isUnassigned && bucketIsModified(cat.id);
+  if (modified) el.classList.add('modified');
+
+  const portLabel = cat.port ? `:${cat.port}` : '—';
+  const portMono = cat.port ? String(cat.port) : '—';
+  const clearBtn = (!isUnassigned && ids.length > 0)
+    ? '<button class="bucket-clear" data-action="clear-bucket" title="把此分类的实体全部移到未分配">清空</button>'
+    : '';
 
   el.innerHTML = `
     <div class="bucket-head" data-action="toggle-bucket">
-      <span class="bucket-toggle">▼</span>
-      <span class="bucket-icon">${escapeHtml(cat.icon || '📁')}</span>
-      <span class="bucket-name">${escapeHtml(cat.name)}</span>
-      <span class="bucket-port">:${cat.port || '—'}</span>
-      <span class="bucket-count">${ids.length} 个实体</span>
-      ${cat.id !== '_unassigned' ? '<button class="bucket-clear" data-action="clear-bucket">清空</button>' : ''}
+      <div class="bucket-rail"></div>
+      <div class="bucket-port" title="HomeKit bridge 端口">${escapeHtml(portMono)}</div>
+      <div class="bucket-name-block">
+        <div class="bucket-name-row">
+          <span class="bucket-icon">${escapeHtml(cat.icon || '◧')}</span>
+          <span class="bucket-name">${escapeHtml(cat.name)}</span>
+        </div>
+        <div class="bucket-meta">${escapeHtml(cat.id)}</div>
+      </div>
+      <div class="bucket-count">
+        ${modified ? '<span class="bucket-dot" title="有未保存的修改"></span>' : ''}
+        <span>${ids.length}</span>
+        <span style="opacity:.6">实体</span>
+      </div>
+      <div class="bucket-actions">
+        ${clearBtn}
+        <span class="bucket-toggle" aria-hidden="true">▾</span>
+      </div>
     </div>
     <div class="bucket-body"></div>
   `;
@@ -402,7 +596,11 @@ function renderBucket(cat, entitiesById) {
   if (entities.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'bucket-empty';
-    empty.textContent = ids.length === 0 ? '拖拽实体到这里,或使用 🎯 自动归类' : '没有匹配的实体(已应用筛选)';
+    if (ids.length === 0) {
+      empty.innerHTML = `<div>此分类暂无实体</div><div class="empty-hint">从下方的实体卡片点击加入,或使用「自动归类」</div>`;
+    } else {
+      empty.textContent = '当前筛选条件下无匹配实体';
+    }
     body.appendChild(empty);
   } else {
     for (const e of entities) {
@@ -412,17 +610,16 @@ function renderBucket(cat, entitiesById) {
   // head 点击折叠/展开
   const head = el.querySelector('[data-action="toggle-bucket"]');
   head.onclick = (ev) => {
-    // 清空按钮 / 其他子按钮不应触发折叠
     if (ev.target.closest('[data-action="clear-bucket"]')) return;
     if (state.collapsedBuckets.has(cat.id)) state.collapsedBuckets.delete(cat.id);
     else state.collapsedBuckets.add(cat.id);
     el.classList.toggle('collapsed');
   };
   // 清空按钮
-  const clearBtn = el.querySelector('[data-action="clear-bucket"]');
-  if (clearBtn) {
-    clearBtn.onclick = (ev) => {
-      ev.stopPropagation();  // 别冒泡到 head 触发折叠
+  const clearBtnEl = el.querySelector('[data-action="clear-bucket"]');
+  if (clearBtnEl) {
+    clearBtnEl.onclick = (ev) => {
+      ev.stopPropagation();
       for (const id of [...state.assignment[cat.id]]) {
         moveEntity(id, '_unassigned');
       }
@@ -477,14 +674,33 @@ function markDirty() {
   state.dirty = true;
 }
 
+// 把当前 assignment 序列化为 saved baseline,用于算 per-bucket dirty
+function snapshotAssignment() {
+  const snap = {};
+  for (const [k, v] of Object.entries(state.assignment)) {
+    snap[k] = [...v].sort();
+  }
+  state.savedAssignment = snap;
+}
+
+function bucketIsModified(catId) {
+  if (!state.savedAssignment) return false;
+  const cur = [...(state.assignment[catId] || new Set())].sort();
+  const sav = state.savedAssignment[catId] || [];
+  if (cur.length !== sav.length) return true;
+  for (let i = 0; i < cur.length; i++) if (cur[i] !== sav[i]) return true;
+  return false;
+}
+
 function updateDirtyStatus() {
   const info = $('#dirty-info');
+  const wrap = $('#footer-info');
   if (state.dirty) {
-    info.textContent = '● 有未保存的修改';
-    info.parentElement.classList.add('dirty');
+    info.textContent = '有未保存的修改';
+    wrap.classList.add('dirty');
   } else {
-    info.textContent = '✓ 无修改';
-    info.parentElement.classList.remove('dirty');
+    info.textContent = '无修改,配置已保存';
+    wrap.classList.remove('dirty');
   }
 }
 
@@ -630,10 +846,12 @@ async function saveAll() {
       reload_bridges: true,
     });
     state.dirty = false;
+    snapshotAssignment();  // 刷新 baseline,清除 per-bucket modified 标记
     updateDirtyStatus();
     const totalEntities = r.bridges.reduce((s, b) => s + b.count, 0);
-    toast(`已保存: ${r.bridges.length} bridge, ${totalEntities} entity`, 'success');
+    toast(`已保存: ${r.bridges.length} bridge · ${totalEntities} entity`, 'success');
     document.getElementById('preview-modal').style.display = 'none';
+    render();  // 重渲染 bucket 以清除 modified class
   } catch (e) {
     toast('保存失败: ' + e.message, 'error');
   }

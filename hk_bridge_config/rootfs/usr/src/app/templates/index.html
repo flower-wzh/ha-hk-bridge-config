@@ -10,15 +10,19 @@
   <!-- 顶部 -->
   <header class="topbar">
     <div class="topbar-left">
-      <span class="brand-icon">🌉</span>
-      <h1>HomeKit Bridge 配置器</h1>
+      <div class="brand-mark" aria-hidden="true">HK</div>
+      <div class="brand-text">
+        <span class="title">HomeKit Bridge 配置器</span>
+        <span class="subtitle" id="brand-subtitle">6 bridges · 加载中…</span>
+      </div>
     </div>
     <div class="topbar-right">
+      <span class="theme-indicator" id="theme-indicator" title="跟随 Home Assistant 主题"></span>
       <span class="status-pill" id="stat-yaml">检查中…</span>
       <span class="status-pill" id="stat-token">—</span>
       <button class="btn-icon" id="btn-reload-bridges" title="重新加载 6 bridge">↻</button>
-      <button class="btn-icon" id="btn-backups" title="备份列表">📦</button>
-      <button class="btn-icon" id="btn-categories" title="分类管理">⚙️</button>
+      <button class="btn-icon" id="btn-backups" title="备份列表">▤</button>
+      <button class="btn-icon" id="btn-categories" title="分类管理">⚙</button>
     </div>
   </header>
 
@@ -40,7 +44,7 @@
     <section class="content">
       <div class="content-toolbar">
         <div class="toolbar-left">
-          <input type="search" id="entity-search" placeholder="🔍 搜索 entity_id / 名字 / domain…">
+          <input type="search" id="entity-search" placeholder="搜索 entity_id / 名字 / domain…">
           <select id="domain-filter">
             <option value="">全部 domain</option>
           </select>
@@ -56,20 +60,21 @@
       </div>
 
       <div class="buckets" id="buckets-container">
-        <!-- 动态生成分类桶,每个桶是一个卡片组 -->
+        <!-- 动态生成分类桶,每个桶是一个 bridge 模块 -->
       </div>
     </section>
   </main>
 
   <!-- 底部保存条 -->
   <footer class="footer-bar" id="footer-bar">
-    <div class="footer-info">
+    <div class="footer-info" id="footer-info">
+      <span class="status-dot"></span>
       <span id="dirty-info">无修改</span>
     </div>
     <div class="footer-actions">
-      <button class="btn-secondary" id="btn-auto-assign">🎯 自动归类</button>
-      <button class="btn-secondary" id="btn-preview">👁 预览 Diff</button>
-      <button class="btn-primary" id="btn-save">💾 保存 + Reload</button>
+      <button class="btn-secondary" id="btn-auto-assign">自动归类</button>
+      <button class="btn-secondary" id="btn-preview">预览 Diff</button>
+      <button class="btn-primary" id="btn-save">保存 + Reload</button>
     </div>
   </footer>
 
@@ -85,11 +90,11 @@
         <p class="hint">拖拽调整分类顺序。规则按顺序匹配,第一个命中的分类胜出。</p>
         <div class="cat-list" id="categories-list"></div>
         <button class="btn-ghost" id="btn-add-category">+ 新增分类</button>
-        <button class="btn-ghost" id="btn-reset-defaults">🔄 重置为默认 6 分类</button>
+        <button class="btn-ghost" id="btn-reset-defaults">↺ 重置为默认 6 分类</button>
       </div>
       <div class="drawer-foot">
         <button class="btn-secondary" data-close-drawer="categories-drawer">取消</button>
-        <button class="btn-primary" id="btn-save-categories">💾 保存分类</button>
+        <button class="btn-primary" id="btn-save-categories">保存分类</button>
       </div>
     </div>
   </div>
@@ -105,7 +110,7 @@
       <div class="modal-body" id="preview-body"></div>
       <div class="modal-foot">
         <button class="btn-secondary" data-close-modal="preview-modal">关闭</button>
-        <button class="btn-primary" id="btn-save-from-preview">💾 确认保存</button>
+        <button class="btn-primary" id="btn-save-from-preview">确认保存</button>
       </div>
     </div>
   </div>
